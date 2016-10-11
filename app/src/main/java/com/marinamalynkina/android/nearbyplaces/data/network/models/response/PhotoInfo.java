@@ -1,10 +1,12 @@
 package com.marinamalynkina.android.nearbyplaces.data.network.models.response;
 
+import java.io.Serializable;
+
 /**
  * Created by ilmarin on 11.10.16.
  */
-
-public class PhotoInfo {
+@SuppressWarnings("serial")
+public class PhotoInfo implements Serializable {
 
     private int height;
 
@@ -12,24 +14,35 @@ public class PhotoInfo {
 
     private String photo_reference;
 
+    public PhotoInfo(int height, String photo_reference, int wifth) {
+        this.height = height;
+        this.photo_reference = photo_reference;
+        this.wifth = wifth;
+    }
+
     public int getHeight() {
         return height;
+    }
+
+    public void setHeight(int height) {
+        this.height = height;
     }
 
     public int getWifth() {
         return wifth;
     }
 
+    public void setWifth(int wifth) {
+        this.wifth = wifth;
+    }
+
     public String getPhoto_reference() {
         return photo_reference;
     }
 
+    public void setPhoto_reference(String photo_reference) {
+        this.photo_reference = photo_reference;
+    }
 
-//    "photos" : [
-//    {
-//        "height" : 270,
-//            "html_attributions" : [],
-//        "photo_reference" : "CnRnAAAAF-LjFR1ZV93eawe1cU_3QNMCNmaGkowY7CnOf-kcNmPhNnPEG9W979jOuJJ1sGr75rhD5hqKzjD8vbMbSsRnq_Ni3ZIGfY6hKWmsOf3qHKJInkm4h55lzvLAXJVc-Rr4kI9O1tmIblblUpg2oqoq8RIQRMQJhFsTr5s9haxQ07EQHxoUO0ICubVFGYfJiMUPor1GnIWb5i8",
-//            "width" : 519
-//    }
+
 }

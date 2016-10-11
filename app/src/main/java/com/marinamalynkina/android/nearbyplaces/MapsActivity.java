@@ -2,6 +2,7 @@ package com.marinamalynkina.android.nearbyplaces;
 
 import android.*;
 import android.Manifest;
+import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.location.Location;
@@ -9,12 +10,19 @@ import android.os.Build;
 import android.os.PersistableBundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.design.widget.BottomSheetBehavior;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.DefaultItemAnimator;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.support.v7.widget.Toolbar;
 import android.util.*;
+import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -42,10 +50,15 @@ import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.marinamalynkina.android.nearbyplaces.data.network.models.response.NearbyPlaces;
+import com.marinamalynkina.android.nearbyplaces.data.network.models.response.PlaceCommonInfo;
 import com.marinamalynkina.android.nearbyplaces.data.network.retrofit.IGooglePlacesWebservicesAPI;
+import com.marinamalynkina.android.nearbyplaces.ui.PlacesListAdapter;
+import com.marinamalynkina.android.nearbyplaces.ui.models.PlaceRow;
 
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -59,7 +72,8 @@ public class MapsActivity extends AppCompatActivity implements
         LocationListener,
         ConnectionCallbacks,
         ActivityCompat.OnRequestPermissionsResultCallback,
-        ResultCallback<LocationSettingsResult> {
+        ResultCallback<LocationSettingsResult>,
+        PlacesListAdapter.PlaceListListener{
 
     /**
      * Constant used in the location settings dialog.
@@ -67,10 +81,12 @@ public class MapsActivity extends AppCompatActivity implements
     protected static final int REQUEST_CHECK_SETTINGS = 0x1;
 
     private static final int defaultZoomLevel = 15;
+    private static final int defaultRadius = 500;
+    private static final int minChangeDistanceForUpdate = 100;
 
     // Keys for storing activity state in the Bundle.
     protected final static String KEY_REQUESTING_LOCATION_UPDATES = "requesting-location-updates";
-    protected final static String KEY_LOCATION = "location";
+
     protected final static String KEY_LAST_UPDATED_TIME_STRING = "last-updated-time-string";
 
     /**
@@ -88,8 +104,12 @@ public class MapsActivity extends AppCompatActivity implements
      * Represents a geographical location.
      */
     protected Location mCurrentLocation;
+    protected final static String KEY_LOCATION = "location";
 
+    // location with last requested places
     private Location mLastLocation;
+
+    private boolean isMapLoaded;
     private Marker mCurrLocationMarker;
 
 
@@ -113,11 +133,55 @@ public class MapsActivity extends AppCompatActivity implements
     private boolean mPermissionDenied = false;
 
 
+    private List<PlaceRow> placesList = new ArrayList<>();
+    private RecyclerView recyclerView;
+    private PlacesListAdapter mAdapter;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.i(MyLog.TAG, "onCreate");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+
+//        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+//        setSupportActionBar(toolbar);
+
+        // получение вью нижнего экрана
+        LinearLayout llBottomSheet = (LinearLayout) findViewById(R.id.bottom_sheet);
+
+        // настройка поведения нижнего экрана
+        BottomSheetBehavior bottomSheetBehavior = BottomSheetBehavior.from(llBottomSheet);
+        // настройка состояний нижнего экрана
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+//        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+//        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
+        // настройка максимальной высоты
+        bottomSheetBehavior.setPeekHeight(340);
+
+        // настройка возможности скрыть элемент при свайпе вниз
+        bottomSheetBehavior.setHideable(false);
+
+        // настройка колбэков при изменениях
+        bottomSheetBehavior.setBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            @Override
+            public void onStateChanged(@NonNull View bottomSheet, int newState) {
+
+            }
+
+            @Override
+            public void onSlide(@NonNull View bottomSheet, float slideOffset) {
+
+            }
+        });
+
+        recyclerView = (RecyclerView) findViewById(R.id.places);
+
+        mAdapter = new PlacesListAdapter(placesList, this);
+        RecyclerView.LayoutManager mLayoutManager = new LinearLayoutManager(getApplicationContext());
+        recyclerView.setLayoutManager(mLayoutManager);
+        recyclerView.setItemAnimator(new DefaultItemAnimator());
+        recyclerView.setAdapter(mAdapter);
 
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PermissionUtils.checkLocationPermission(this);
@@ -271,28 +335,7 @@ public class MapsActivity extends AppCompatActivity implements
         }
     }
 
-    /**
-     * Requests location updates from the FusedLocationApi.
-     */
-    protected void startLocationUpdates() {
-        if (PermissionUtils.isLocationPermissionEnable(this)) {
-            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-        }
 
-
-//        LocationServices.FusedLocationApi.requestLocationUpdates(
-//                mGoogleApiClient,
-//                mLocationRequest,
-//                this
-//        ).setResultCallback(new ResultCallback<Status>() {
-//            @Override
-//            public void onResult(Status status) {
-//                mRequestingLocationUpdates = true;
-//                setButtonsEnabledState();
-//            }
-//        });
-
-    }
 
 
     /**
@@ -339,11 +382,12 @@ public class MapsActivity extends AppCompatActivity implements
             Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
                     mGoogleApiClient);
 //            setLocationonMap(mLastLocation);
-            setMyLocation(mLastLocation);
 
-            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+//            setMyLocation(mLastLocation);
 
-//            startLocationUpdates();
+//            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+
+            startLocationUpdates();
 
 
         }
@@ -365,12 +409,24 @@ public class MapsActivity extends AppCompatActivity implements
         }
     }
 
-    private void setMyLocation(Location location) {
-        LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+    private void setMyLocation(@Nullable Location location) {
+        if (location != null) {
 
-        //move map camera
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+
+            //move map camera
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+            mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+        }
+    }
+
+    /**
+     * Requests location updates from the FusedLocationApi.
+     */
+    protected void startLocationUpdates() {
+//        if (PermissionUtils.isLocationPermissionEnable(this)) {
+        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+//        }
     }
 
 
@@ -396,7 +452,7 @@ public class MapsActivity extends AppCompatActivity implements
 
         Log.i(MyLog.TAG, "location "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
 
-        Call<NearbyPlaces> call = service.getNearbyPlaces(mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude(), 500);
+        Call<NearbyPlaces> call = service.getNearbyPlaces(mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude(), defaultRadius);
 
         call.enqueue(new Callback<NearbyPlaces>() {
 
@@ -411,11 +467,14 @@ public class MapsActivity extends AppCompatActivity implements
                 Log.i(MyLog.TAG, "restofit onResponse");
                 try {
                     mMap.clear();
+                    placesList.clear();
                     Log.i(MyLog.TAG, "restofit onResponse response.message="+response.message());
                     Log.i(MyLog.TAG, "restofit onResponse response.code="+response.code());
                     Log.i(MyLog.TAG, "restofit onResponse response.isSuccessful="+response.isSuccessful());
                     Log.i(MyLog.TAG, "restofit onResponse response.status="+response.body().getStatus());
                     Log.i(MyLog.TAG, "restofit onResponse response.places size="+response.body().getPlaces().size());
+
+
                     // This loop will go through all the results and add marker on each location.
                     for (int i = 0; i < response.body().getPlaces().size(); i++) {
                         Double lat = response.body().getPlaces().get(i).getGeometry().getLocation().getLatitude();
@@ -443,13 +502,20 @@ public class MapsActivity extends AppCompatActivity implements
                         // Adding Title to the Marker
                         markerOptions.title(placeName + " "+distance+" м");
                         // Adding Marker to the Camera.
-                        Marker m = mMap.addMarker(markerOptions);
-                        // Adding colour to the marker
-                        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+                        if (distance <= defaultRadius) {
+                            Marker m = mMap.addMarker(markerOptions);
+                            // Adding colour to the marker
+                            markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+
+                            placesList.add(new PlaceRow(response.body().getPlaces().get(i), distance + " m"));
+                        }
+
                         // move map camera
 //                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
 //                        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
                     }
+
+                    mAdapter.notifyDataSetChanged();
                 } catch (Exception e) {
                     Log.d(MyLog.TAG, "There is an error");
                     e.printStackTrace();
@@ -483,35 +549,46 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     public void onLocationChanged(Location location) {
         Log.i(MyLog.TAG, "onLocationChanged");
-        mCurrentLocation = location;
-        mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
-//        updateLocationUI();
-        Toast.makeText(this, "location updated",
-                Toast.LENGTH_SHORT).show();
-//        setLocationonMap(location);
-//========
-        if (mCurrLocationMarker != null) {
-            mCurrLocationMarker.remove();
+        if (mLastLocation == null) {
+            mLastLocation = location;
+
         }
 
-        //Place current location marker
-        LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+        mCurrentLocation = location;
+
+        if (Math.round(mCurrentLocation.distanceTo(mLastLocation)) > minChangeDistanceForUpdate || !isMapLoaded) {
+
+            mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
+//        updateLocationUI();
+            Toast.makeText(this, "location updated",
+                    Toast.LENGTH_SHORT).show();
+//        setLocationonMap(location);
+//========
+            if (mCurrLocationMarker != null) {
+                mCurrLocationMarker.remove();
+            }
+
+            //Place current location marker
+            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
 //        MarkerOptions markerOptions = new MarkerOptions();
 //        markerOptions.position(latLng);
 //        markerOptions.title("Current Position");
 //        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA));
 //        mCurrLocationMarker = mMap.addMarker(markerOptions);
 
-        //move map camera
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+            //move map camera
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+            mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+            isMapLoaded = true;
+
+            build_retrofit_and_get_response();
+
+        }
 
         //stop location updates
         if (mGoogleApiClient != null) {
             LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
         }
-
-        build_retrofit_and_get_response();
     }
 
     @Override
@@ -540,6 +617,12 @@ public class MapsActivity extends AppCompatActivity implements
         super.onStop();
     }
 
+    @Override
+    protected void onDestroy() {
+        Log.i(MyLog.TAG, "onDestroy");
+        super.onDestroy();
+    }
+
     /**
      * Stores activity data in the Bundle.
      */
@@ -553,5 +636,22 @@ public class MapsActivity extends AppCompatActivity implements
         }else
             Log.i(MyLog.TAG,  "onSaveInstanceState null");
         super.onSaveInstanceState(savedInstanceState);
+    }
+
+
+    @Override
+    public void onListRowClick(PlaceRow placeRow) {
+        Log.i(MyLog.TAG, "onListRowClick ");
+        // open new window
+        if (placeRow != null) {
+
+            Intent intent = new Intent(this, PlaceActivity.class);
+            intent.putExtra("placeRow", placeRow);
+            startActivity(intent);
+
+
+            PlaceCommonInfo commonInfo = placeRow.getCommonInfo();
+            Log.i(MyLog.TAG, "id " + commonInfo.getPlaceId());
+        }
     }
 }
