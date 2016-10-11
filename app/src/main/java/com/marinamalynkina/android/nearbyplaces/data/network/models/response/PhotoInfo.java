@@ -12,6 +12,17 @@ public class PhotoInfo {
 
     private String photo_reference;
 
+    public int getHeight() {
+        return height;
+    }
+
+    public int getWifth() {
+        return wifth;
+    }
+
+    public String getPhoto_reference() {
+        return photo_reference;
+    }
 
 
 //    "photos" : [

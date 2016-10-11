@@ -14,4 +14,19 @@ public class NearbyPlaces {
     private ArrayList<PlaceCommonInfo> places;
 
     private String status;
+
+    @SerializedName("next_page_token")
+    private String nextPageToken;
+
+    public String getNextPageToken() {
+        return nextPageToken;
+    }
+
+    public ArrayList<PlaceCommonInfo> getPlaces() {
+        return places;
+    }
+
+    public String getStatus() {
+        return status;
+    }
 }

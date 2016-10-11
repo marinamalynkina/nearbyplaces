@@ -20,8 +20,12 @@ public interface IGooglePlacesWebservicesAPI {
 //    @Body — use it with the @POST annotation to provide the query body content.
 
 
-    @GET("/place/nearbysearch/json?location=-33.8670522,151.1957362&radius=500&types=food&name=cruise&key=YOUR_API_KEY")
-    Call<NearbyPlaces> nearbysearch(@Query("tagged") String tags);
+//    @GET("/place/nearbysearch/json?location=-33.8670522,151.1957362&radius=500&types=food&name=cruise&key=YOUR_API_KEY")
+//    Call<NearbyPlaces> nearbysearch(@Query("tagged") String tags);
+
+    @GET("api/place/nearbysearch/json?key=AIzaSyC0xzsgfDv-9UR1z-3uy77D_9Q3T2r6U6U")
+    Call<NearbyPlaces> getNearbyPlaces(@Query("location") String location, @Query("radius") int radius);
+
 
 
 //    @GET("repos/{owner}/{repo}/contributors")

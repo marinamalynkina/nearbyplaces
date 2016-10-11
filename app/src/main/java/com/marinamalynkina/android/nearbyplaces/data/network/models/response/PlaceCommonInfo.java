@@ -1,5 +1,8 @@
 package com.marinamalynkina.android.nearbyplaces.data.network.models.response;
 
+import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
+
 import java.util.ArrayList;
 import java.util.Map;
 
@@ -15,7 +18,8 @@ public class PlaceCommonInfo {
 
     private String name;
 
-    private Map<String, Boolean> opening_hours;
+    @SerializedName("opening_hours")
+    private OpeningHours openingHours;
 
     private ArrayList<PhotoInfo> photos;
 
@@ -26,6 +30,8 @@ public class PlaceCommonInfo {
     private String reference;
 
     private String vicinity;
+
+
 
 
 //    "geometry" : {
@@ -60,4 +66,40 @@ public class PlaceCommonInfo {
 //            "types" : [ "travel_agency", "restaurant", "food", "establishment" ],
 //            "vicinity" : "Pyrmont Bay Wharf Darling Dr, Sydney"
 
+
+    public Geometry getGeometry() {
+        return geometry;
+    }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public OpeningHours getOpeningHours() {
+        return openingHours;
+    }
+
+    public ArrayList<PhotoInfo> getPhotos() {
+        return photos;
+    }
+
+    public String getPlace_id() {
+        return place_id;
+    }
+
+    public String getReference() {
+        return reference;
+    }
+
+    public String getScope() {
+        return scope;
+    }
+
+    public String getVicinity() {
+        return vicinity;
+    }
 }

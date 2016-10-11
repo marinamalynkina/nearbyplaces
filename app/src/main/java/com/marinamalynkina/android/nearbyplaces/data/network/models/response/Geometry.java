@@ -7,4 +7,8 @@ package com.marinamalynkina.android.nearbyplaces.data.network.models.response;
 public class Geometry {
 
     private Location location;
+
+    public Location getLocation() {
+        return location;
+    }
 }

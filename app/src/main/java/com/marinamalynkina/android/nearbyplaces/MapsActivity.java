@@ -18,6 +18,7 @@ import android.util.*;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
@@ -40,9 +41,17 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.marinamalynkina.android.nearbyplaces.data.network.models.response.NearbyPlaces;
+import com.marinamalynkina.android.nearbyplaces.data.network.retrofit.IGooglePlacesWebservicesAPI;
 
 import java.text.DateFormat;
 import java.util.Date;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 public class MapsActivity extends AppCompatActivity implements
         OnMapReadyCallback,
@@ -56,6 +65,8 @@ public class MapsActivity extends AppCompatActivity implements
      * Constant used in the location settings dialog.
      */
     protected static final int REQUEST_CHECK_SETTINGS = 0x1;
+
+    private static final int defaultZoomLevel = 15;
 
     // Keys for storing activity state in the Bundle.
     protected final static String KEY_REQUESTING_LOCATION_UPDATES = "requesting-location-updates";
@@ -112,6 +123,15 @@ public class MapsActivity extends AppCompatActivity implements
             PermissionUtils.checkLocationPermission(this);
         }
 
+        //show error dialog if Google Play Services not available
+        if (!isGooglePlayServicesAvailable()) {
+            Log.d(MyLog.TAG, "oncreate Google Play Services not available. Ending Test case.");
+            finish();
+        }
+        else {
+            Log.d(MyLog.TAG, "oncreate Google Play Services available. Continuing.");
+        }
+
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
 
@@ -124,6 +144,19 @@ public class MapsActivity extends AppCompatActivity implements
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+    }
+
+    private boolean isGooglePlayServicesAvailable() {
+        GoogleApiAvailability googleAPI = GoogleApiAvailability.getInstance();
+        int result = googleAPI.isGooglePlayServicesAvailable(this);
+        if(result != ConnectionResult.SUCCESS) {
+            if(googleAPI.isUserResolvableError(result)) {
+                googleAPI.getErrorDialog(this, result,
+                        0).show();
+            }
+            return false;
+        }
+        return true;
     }
 
 
@@ -303,22 +336,24 @@ public class MapsActivity extends AppCompatActivity implements
         Log.i(MyLog.TAG, "onConnected");
 
         if (PermissionUtils.checkLocationPermission(this)) {
-//            Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
-//                    mGoogleApiClient);
+            Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
+                    mGoogleApiClient);
 //            setLocationonMap(mLastLocation);
+            setMyLocation(mLastLocation);
+
             LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
 
 //            startLocationUpdates();
+
+
         }
 
 
     }
 
-
-
-
     private void setLocationonMap(Location location) {
         if (location != null) {
+            mCurrentLocation = location;
             double latitude = location.getLatitude();
             double longitude = location.getLongitude();
             Toast.makeText(this, latitude + " " + longitude, Toast.LENGTH_LONG).show();
@@ -330,6 +365,14 @@ public class MapsActivity extends AppCompatActivity implements
         }
     }
 
+    private void setMyLocation(Location location) {
+        LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+
+        //move map camera
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+    }
+
 
 
     @Override
@@ -339,6 +382,83 @@ public class MapsActivity extends AppCompatActivity implements
         // attempt to re-establish the connection.
         mGoogleApiClient.connect();
     }
+
+    private void build_retrofit_and_get_response() {
+
+        String url = "https://maps.googleapis.com/maps/";
+
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(url)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        IGooglePlacesWebservicesAPI service = retrofit.create(IGooglePlacesWebservicesAPI.class);
+
+        Log.i(MyLog.TAG, "location "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
+
+        Call<NearbyPlaces> call = service.getNearbyPlaces(mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude(), 500);
+
+        call.enqueue(new Callback<NearbyPlaces>() {
+
+            @Override
+            public void onFailure(Call<NearbyPlaces> call, Throwable t) {
+                Log.d("onFailure", t.toString());
+                Log.i(MyLog.TAG, "restofit onFailure");
+            }
+
+            @Override
+            public void onResponse(Call<NearbyPlaces> call, Response<NearbyPlaces> response) {
+                Log.i(MyLog.TAG, "restofit onResponse");
+                try {
+                    mMap.clear();
+                    Log.i(MyLog.TAG, "restofit onResponse response.message="+response.message());
+                    Log.i(MyLog.TAG, "restofit onResponse response.code="+response.code());
+                    Log.i(MyLog.TAG, "restofit onResponse response.isSuccessful="+response.isSuccessful());
+                    Log.i(MyLog.TAG, "restofit onResponse response.status="+response.body().getStatus());
+                    Log.i(MyLog.TAG, "restofit onResponse response.places size="+response.body().getPlaces().size());
+                    // This loop will go through all the results and add marker on each location.
+                    for (int i = 0; i < response.body().getPlaces().size(); i++) {
+                        Double lat = response.body().getPlaces().get(i).getGeometry().getLocation().getLatitude();
+                        Double lng = response.body().getPlaces().get(i).getGeometry().getLocation().getLongitude();
+                        String placeName = response.body().getPlaces().get(i).getName();
+                        String vicinity = response.body().getPlaces().get(i).getVicinity();
+
+                        Log.i(MyLog.TAG, "place  "+ i+" "+ lat + "," + lng+" " + placeName+" "+ vicinity);
+
+
+                        MarkerOptions markerOptions = new MarkerOptions();
+                        LatLng latLng = new LatLng(lat, lng);
+
+//                        mCurrentLocation.
+
+                        Location l = new Location(mCurrentLocation);
+                        l.setLatitude(lat);
+                        l.setLongitude(lng);
+
+                        int distance = Math.round(mCurrentLocation.distanceTo(l));
+
+
+                        // Position of Marker on Map
+                        markerOptions.position(latLng);
+                        // Adding Title to the Marker
+                        markerOptions.title(placeName + " "+distance+" м");
+                        // Adding Marker to the Camera.
+                        Marker m = mMap.addMarker(markerOptions);
+                        // Adding colour to the marker
+                        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+                        // move map camera
+//                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+//                        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+                    }
+                } catch (Exception e) {
+                    Log.d(MyLog.TAG, "There is an error");
+                    e.printStackTrace();
+                }
+            }
+        });
+
+    }
+
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
@@ -384,12 +504,14 @@ public class MapsActivity extends AppCompatActivity implements
 
         //move map camera
         mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-        mMap.animateCamera(CameraUpdateFactory.zoomTo(15));
+        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
 
         //stop location updates
         if (mGoogleApiClient != null) {
             LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
         }
+
+        build_retrofit_and_get_response();
     }
 
     @Override
