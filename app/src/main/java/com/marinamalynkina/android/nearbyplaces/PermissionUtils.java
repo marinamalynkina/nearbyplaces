@@ -19,10 +19,15 @@ package com.marinamalynkina.android.nearbyplaces;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.content.ContextCompat;
@@ -50,17 +55,12 @@ public abstract class PermissionUtils {
 
     /**
      * Request code for location permission request.
-     *
-     * @see #onRequestPermissionsResult(int, String[], int[])
      */
     public static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
 
-    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
     public static boolean checkLocationPermission(AppCompatActivity activity){
         if (ActivityCompat.checkSelfPermission(activity,
-                android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                && ActivityCompat.checkSelfPermission(activity,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
             PermissionUtils.requestPermission(activity, LOCATION_PERMISSION_REQUEST_CODE,
                     android.Manifest.permission.ACCESS_FINE_LOCATION, true);
@@ -70,6 +70,22 @@ public abstract class PermissionUtils {
             return true;
         }
     }
+
+    public static final int Network_PERMISSION_REQUEST_CODE = 2;
+
+    public static boolean checkNetworkPermission(AppCompatActivity activity){
+        if (ActivityCompat.checkSelfPermission(activity,
+                Manifest.permission.ACCESS_NETWORK_STATE) != PackageManager.PERMISSION_GRANTED) {
+
+            PermissionUtils.requestPermission(activity, Network_PERMISSION_REQUEST_CODE,
+                    android.Manifest.permission.ACCESS_NETWORK_STATE, true);
+
+            return false;
+        } else {
+            return true;
+        }
+    }
+
 
     /**
      * Requests the fine location permission. If a rationale with an additional explanation should
@@ -92,8 +108,6 @@ public abstract class PermissionUtils {
     /**
      * Checks if the result contains a {@link PackageManager#PERMISSION_GRANTED} result for a
      * permission from a runtime permissions request.
-     *
-     * @see android.support.v4.app.ActivityCompat.OnRequestPermissionsResultCallback
      */
     public static boolean isPermissionGranted(String[] grantPermissions, int[] grantResults,
                                               String permission) {
@@ -103,6 +117,47 @@ public abstract class PermissionUtils {
             }
         }
         return false;
+    }
+
+    public static boolean haveInternet(Context ctx) {
+
+        NetworkInfo info = (NetworkInfo) ((ConnectivityManager) ctx
+                .getSystemService(Context.CONNECTIVITY_SERVICE)).getActiveNetworkInfo();
+
+        if (info == null || !info.isConnected()) {
+            return false;
+        }
+        if (info.isRoaming()) {
+            // here is the roaming option you can change it if you want to
+            // disable internet while roaming, just return false
+            return true;
+        }
+        return true;
+    }
+
+    public static void showNoConnectionDialog(Context ctx1) {
+        final Context ctx = ctx1;
+        AlertDialog.Builder builder = new AlertDialog.Builder(ctx);
+        builder.setCancelable(true);
+        builder.setMessage("Internet not available, Cross check your internet connectivity and try again");
+        builder.setTitle("Network problem");
+        builder.setPositiveButton("Open settings", new DialogInterface.OnClickListener() {
+            public void onClick(DialogInterface dialog, int which) {
+                ctx.startActivity(new Intent(Settings.ACTION_SETTINGS));
+            }
+        });
+//        builder.setNegativeButton("Continue", new DialogInterface.OnClickListener() {
+//            public void onClick(DialogInterface dialog, int which) {
+//                return;
+//            }
+//        });
+        builder.setOnCancelListener(new DialogInterface.OnCancelListener() {
+            public void onCancel(DialogInterface dialog) {
+                return;
+            }
+        });
+
+        builder.show();
     }
 
 }

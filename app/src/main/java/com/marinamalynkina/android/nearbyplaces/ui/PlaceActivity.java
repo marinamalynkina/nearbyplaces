@@ -1,21 +1,20 @@
-package com.marinamalynkina.android.nearbyplaces;
+package com.marinamalynkina.android.nearbyplaces.ui;
 
 import android.content.Intent;
-import android.location.Location;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 
-import com.google.android.gms.maps.model.BitmapDescriptorFactory;
-import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.Marker;
-import com.google.android.gms.maps.model.MarkerOptions;
-import com.marinamalynkina.android.nearbyplaces.data.network.models.response.NearbyPlaces;
+import com.marinamalynkina.android.nearbyplaces.App;
+import com.marinamalynkina.android.nearbyplaces.MyLog;
+import com.marinamalynkina.android.nearbyplaces.R;
 import com.marinamalynkina.android.nearbyplaces.data.network.models.response.PlaceFullInfo;
 import com.marinamalynkina.android.nearbyplaces.data.network.models.response.PlaceInfoResponse;
 import com.marinamalynkina.android.nearbyplaces.data.network.retrofit.IGooglePlacesWebservicesAPI;
 import com.marinamalynkina.android.nearbyplaces.ui.models.PlaceRow;
+
+import javax.inject.Inject;
 
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -29,11 +28,15 @@ public class PlaceActivity extends AppCompatActivity {
     private PlaceFullInfo place;
     private TextView placeInfo;
 
+    @Inject
+    Retrofit retrofit;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.i(MyLog.TAG, "onCreate ");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_place);
+        ((App) getApplication()).getNetComponent().inject(this);
 
         placeInfo = (TextView) findViewById(R.id.place_info);
 
@@ -44,31 +47,14 @@ public class PlaceActivity extends AppCompatActivity {
             Log.i(MyLog.TAG, "placeRow != null ");
         }
 
-        build_retrofit_and_get_response();
+        retrofitRequest();
     }
 
-
-    private void build_retrofit_and_get_response() {
-
-        String url = "https://maps.googleapis.com/maps/";
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(url)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        IGooglePlacesWebservicesAPI service = retrofit.create(IGooglePlacesWebservicesAPI.class);
-
-        Call<PlaceInfoResponse> call = service.getPlaceInfo(placeRow.getCommonInfo().getPlaceId());
-
+    private void retrofitRequest() {
+        //Create a retrofit call object
+        Call<PlaceInfoResponse> call = retrofit.create(IGooglePlacesWebservicesAPI.class).getPlaceInfo(placeRow.getCommonInfo().getPlaceId());
+        //Enque the call
         call.enqueue(new Callback<PlaceInfoResponse>() {
-
-            @Override
-            public void onFailure(Call<PlaceInfoResponse> call, Throwable t) {
-                Log.d("onFailure", t.toString());
-                Log.i(MyLog.TAG, "restofit onFailure");
-            }
-
             @Override
             public void onResponse(Call<PlaceInfoResponse> call, Response<PlaceInfoResponse> response) {
                 Log.i(MyLog.TAG, "restofit onResponse");
@@ -80,7 +66,7 @@ public class PlaceActivity extends AppCompatActivity {
                     place = response.body().getPlace();
                     if (place != null) {
                         Log.i(MyLog.TAG," place not null" );
-                                String info = place.getName() + "\n"
+                        String info = place.getName() + "\n"
                                 + place.getAdress() + "\n"
                                 + place.getPhone() + "\n"
                                 + place.getWebsite() + "\n"
@@ -93,8 +79,13 @@ public class PlaceActivity extends AppCompatActivity {
                     Log.d(MyLog.TAG, "There is an error");
                     e.printStackTrace();
                 }
+
+            }
+
+            @Override
+            public void onFailure(Call<PlaceInfoResponse> call, Throwable t) {
+                Log.i(MyLog.TAG, "restofit onFailure "+ t.toString());
             }
         });
-
     }
 }

@@ -1,25 +1,24 @@
-package com.marinamalynkina.android.nearbyplaces;
+package com.marinamalynkina.android.nearbyplaces.ui;
 
-import android.*;
 import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.IntentSender;
-import android.content.pm.PackageManager;
 import android.location.Location;
+import android.net.ConnectivityManager;
+import android.net.wifi.WifiManager;
 import android.os.Build;
-import android.os.PersistableBundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.design.widget.BottomSheetBehavior;
 import android.support.v4.app.ActivityCompat;
-import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.DefaultItemAnimator;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.Toolbar;
 import android.util.*;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -38,7 +37,6 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResult;
-import com.google.android.gms.location.LocationSettingsStates;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -46,13 +44,13 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.marinamalynkina.android.nearbyplaces.*;
+import com.marinamalynkina.android.nearbyplaces.R;
 import com.marinamalynkina.android.nearbyplaces.data.network.models.response.NearbyPlaces;
 import com.marinamalynkina.android.nearbyplaces.data.network.models.response.PlaceCommonInfo;
 import com.marinamalynkina.android.nearbyplaces.data.network.retrofit.IGooglePlacesWebservicesAPI;
-import com.marinamalynkina.android.nearbyplaces.ui.PlacesListAdapter;
 import com.marinamalynkina.android.nearbyplaces.ui.models.PlaceRow;
 
 import java.text.DateFormat;
@@ -60,11 +58,12 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import javax.inject.Inject;
+
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
 
 public class MapsActivity extends AppCompatActivity implements
         OnMapReadyCallback,
@@ -88,6 +87,8 @@ public class MapsActivity extends AppCompatActivity implements
     protected final static String KEY_REQUESTING_LOCATION_UPDATES = "requesting-location-updates";
 
     protected final static String KEY_LAST_UPDATED_TIME_STRING = "last-updated-time-string";
+
+    private boolean mPermissionDenied = false;
 
     /**
      * Tracks the status of the location updates request. Value changes when the user presses the
@@ -122,28 +123,24 @@ public class MapsActivity extends AppCompatActivity implements
      * Stores the types of location services the client is interested in using. Used for checking
      * settings to determine if the device has optimal location settings.
      */
-    protected LocationSettingsRequest mLocationSettingsRequest;
-
-
-
-
-    /**
-     * Flag indicating whether a requested permission has been denied after returning in
-     * {@link #onRequestPermissionsResult(int, String[], int[])}.
-     */
-    private boolean mPermissionDenied = false;
+    private LocationSettingsRequest mLocationSettingsRequest;
+    private boolean locationGet = false;
 
 
     private ArrayList<PlaceRow> placesList = new ArrayList<>();
-    protected final static String KEY_PLACES = "places";
+    private final static String KEY_PLACES = "places";
     private RecyclerView recyclerView;
     private PlacesListAdapter mAdapter;
+
+    @Inject
+    Retrofit retrofit;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.i(MyLog.TAG, "onCreate");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
+        ((App) getApplication()).getNetComponent().inject(this);
 
 //        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
 //        setSupportActionBar(toolbar);
@@ -163,19 +160,6 @@ public class MapsActivity extends AppCompatActivity implements
         // настройка возможности скрыть элемент при свайпе вниз
         bottomSheetBehavior.setHideable(false);
 
-        // настройка колбэков при изменениях
-        bottomSheetBehavior.setBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
-            @Override
-            public void onStateChanged(@NonNull View bottomSheet, int newState) {
-
-            }
-
-            @Override
-            public void onSlide(@NonNull View bottomSheet, float slideOffset) {
-
-            }
-        });
-
         recyclerView = (RecyclerView) findViewById(R.id.places);
 
         mAdapter = new PlacesListAdapter(placesList, this);
@@ -186,7 +170,10 @@ public class MapsActivity extends AppCompatActivity implements
 
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PermissionUtils.checkLocationPermission(this);
+
         }
+        if (!PermissionUtils.haveInternet(this))
+            PermissionUtils.showNoConnectionDialog(this);
 
         //show error dialog if Google Play Services not available
         if (!isGooglePlayServicesAvailable()) {
@@ -200,18 +187,24 @@ public class MapsActivity extends AppCompatActivity implements
         // Update values using data stored in the Bundle.
         updateValuesFromBundle(savedInstanceState);
 
+        initLocationThings();
+        isMapLoaded = false;
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                .findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+
+    }
+
+    private void initLocationThings() {
         // Create an instance of GoogleAPIClient.
         buildGoogleApiClient();
         createLocationRequest();
         buildLocationSettingsRequest();
         checkLocationSettings();
 
-        isMapLoaded = false;
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
     }
+
 
     private boolean isGooglePlayServicesAvailable() {
         GoogleApiAvailability googleAPI = GoogleApiAvailability.getInstance();
@@ -229,22 +222,12 @@ public class MapsActivity extends AppCompatActivity implements
 
     /**
      * Updates fields based on data stored in the bundle.
-     *
-     * @param savedInstanceState The activity state saved in the Bundle.
      */
     private void updateValuesFromBundle(Bundle savedInstanceState) {
         Log.i(MyLog.TAG, "updateValuesFromBundle");
         if (savedInstanceState != null) {
             Log.i(MyLog.TAG, "updateValuesFromBundle savedInstanceState not null");
-            // Update the value of mRequestingLocationUpdates from the Bundle, and make sure that
-            // the Start Updates and Stop Updates buttons are correctly enabled or disabled.
-            if (savedInstanceState.keySet().contains(KEY_REQUESTING_LOCATION_UPDATES)) {
-                mRequestingLocationUpdates = savedInstanceState.getBoolean(
-                        KEY_REQUESTING_LOCATION_UPDATES);
-            }
 
-            // Update the value of mCurrentLocation from the Bundle and update the UI to show the
-            // correct latitude and longitude.
             if (savedInstanceState.keySet().contains(KEY_CURRENTLOCATION)) {
                 mCurrentLocation = savedInstanceState.getParcelable(KEY_CURRENTLOCATION);
                 if (mCurrentLocation != null)
@@ -257,17 +240,11 @@ public class MapsActivity extends AppCompatActivity implements
                 Log.i(MyLog.TAG, "updateValuesFromBundle mLastLocation "+ mLastLocation.getLatitude()+","+mLastLocation.getLongitude());
             }
 
-            // Update the value of mLastUpdateTime from the Bundle and update the UI.
-            if (savedInstanceState.keySet().contains(KEY_LAST_UPDATED_TIME_STRING)) {
-                mLastUpdateTime = savedInstanceState.getString(KEY_LAST_UPDATED_TIME_STRING);
-            }
-
             if (savedInstanceState.keySet().contains(KEY_PLACES)) {
                 placesList = savedInstanceState.getParcelableArrayList(KEY_PLACES);
                 Log.i(MyLog.TAG, "updateValuesFromBundle placesList exist "+ placesList.size());
 
             }
-//            savedInstanceState.putParcelableArrayList(KEY_PLACES, placesList);
         }
     }
 
@@ -287,17 +264,22 @@ public class MapsActivity extends AppCompatActivity implements
 
     private void createLocationRequest() {
         mLocationRequest = new LocationRequest();
-        mLocationRequest.setInterval(10000);
-        mLocationRequest.setFastestInterval(5000);
+        mLocationRequest.setInterval(60000);
+        mLocationRequest.setFastestInterval(30000);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
 //        mLocationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
     }
 
-    /**
-     * Uses a {@link com.google.android.gms.location.LocationSettingsRequest.Builder} to build
-     * a {@link com.google.android.gms.location.LocationSettingsRequest} that is used for checking
-     * if a device has the needed location settings.
-     */
+//    private void createSlowLocationRequest() {
+//        if (mLocationRequest == null) {
+//            mLocationRequest = new LocationRequest();
+//            mLocationRequest.setInterval(60000);
+//            mLocationRequest.setFastestInterval(10000);
+//            mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+//        }
+////        mLocationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+//    }
+
     protected void buildLocationSettingsRequest() {
         LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder();
         builder.addLocationRequest(mLocationRequest);
@@ -306,8 +288,7 @@ public class MapsActivity extends AppCompatActivity implements
 
     /**
      * Check if the device's location settings are adequate for the app's needs using the
-     * {@link com.google.android.gms.location.SettingsApi#checkLocationSettings(GoogleApiClient,
-     * LocationSettingsRequest)} method, with the results provided through a {@code PendingResult}.
+     *  method, with the results provided through a PendingResult.
      */
     protected void checkLocationSettings() {
         PendingResult<LocationSettingsResult> result =
@@ -318,14 +299,6 @@ public class MapsActivity extends AppCompatActivity implements
         result.setResultCallback(this);
     }
 
-    /**
-     * The callback invoked when
-     * {@link com.google.android.gms.location.SettingsApi#checkLocationSettings(GoogleApiClient,
-     * LocationSettingsRequest)} is called. Examines the
-     * {@link com.google.android.gms.location.LocationSettingsResult} object and determines if
-     * location settings are adequate. If they are not, begins the process of presenting a location
-     * settings dialog to the user.
-     */
     @Override
     public void onResult(LocationSettingsResult locationSettingsResult) {
         final Status status = locationSettingsResult.getStatus();
@@ -353,17 +326,10 @@ public class MapsActivity extends AppCompatActivity implements
         }
     }
 
-
-
-
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
+     * This is where we can add markers or lines, add listeners or move the camera.
      */
     @Override
     public void onMapReady(GoogleMap googleMap) {
@@ -373,13 +339,7 @@ public class MapsActivity extends AppCompatActivity implements
         if (PermissionUtils.isLocationPermissionEnable(this))
             initializeMapsSettings();
 
-
-        // Add a marker in Sydney and move the camera
-//        LatLng sydney = new LatLng(-34, 151);
-//        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-//        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
     }
-
 
     public void initializeMapsSettings() {
         mMap.setMyLocationEnabled(true);
@@ -393,52 +353,19 @@ public class MapsActivity extends AppCompatActivity implements
     /**
      * Runs when a GoogleApiClient object successfully connects.
      */
+
+
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         Log.i(MyLog.TAG, "onConnected");
-
         setPlacesOnMap();
 
         if (PermissionUtils.checkLocationPermission(this)) {
-            Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
-                    mGoogleApiClient);
-
-//            setLocationonMap(mLastLocation);
-
-//            setMyLocation(mLastLocation);
-
-//            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
 
             startLocationUpdates();
 
-
         }
 
-    }
-
-    private void setLocationonMap(Location location) {
-        if (location != null) {
-            mCurrentLocation = location;
-            double latitude = location.getLatitude();
-            double longitude = location.getLongitude();
-            Toast.makeText(this, latitude + " " + longitude, Toast.LENGTH_LONG).show();
-            Log.i(MyLog.TAG, latitude + " " + longitude);
-
-            LatLng position = new LatLng(latitude, longitude);
-            mMap.addMarker(new MarkerOptions().position(position).title("current position"));
-            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(position, 15f));
-        }
-    }
-
-    private void setMyLocation(@Nullable Location location) {
-        if (location != null) {
-
-            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
-
-            //move map camera
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-            mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
-        }
     }
 
     /**
@@ -450,8 +377,6 @@ public class MapsActivity extends AppCompatActivity implements
 //        }
     }
 
-
-
     @Override
     public void onConnectionSuspended(int i) {
         Log.i(MyLog.TAG, "onConnectionSuspended");
@@ -460,29 +385,88 @@ public class MapsActivity extends AppCompatActivity implements
         mGoogleApiClient.connect();
     }
 
-    private void build_retrofit_and_get_response() {
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
 
-        String url = "https://maps.googleapis.com/maps/";
+        Log.i(MyLog.TAG, "onRequestPermissionsResult");
+        if (requestCode != PermissionUtils.LOCATION_PERMISSION_REQUEST_CODE) {
+            return;
+        }
 
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(url)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
+        if (PermissionUtils.isPermissionGranted(permissions, grantResults,
+                Manifest.permission.ACCESS_FINE_LOCATION)) {
 
-        IGooglePlacesWebservicesAPI service = retrofit.create(IGooglePlacesWebservicesAPI.class);
+            initializeMapsSettings();
+        } else {
+            // Display the missing permission error dialog when the fragments resume.
+            mPermissionDenied = true;
+        }
+    }
 
-        Log.i(MyLog.TAG, "location "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
+    /**
+     * Callback that fires when the location changes.
+     */
+    @Override
+    public void onLocationChanged(Location location) {
+        Log.i(MyLog.TAG, "onLocationChanged");
 
-        Call<NearbyPlaces> call = service.getNearbyPlaces(mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude(), defaultRadius);
+        if (mLastLocation != null)
+        Log.i(MyLog.TAG, "mLastLocation "+ mLastLocation.getLatitude() + "," + mLastLocation.getLongitude());
 
-        call.enqueue(new Callback<NearbyPlaces>() {
+        if (mLastLocation == null) {
+            mLastLocation = location;
 
-            @Override
-            public void onFailure(Call<NearbyPlaces> call, Throwable t) {
-                Log.d("onFailure", t.toString());
-                Log.i(MyLog.TAG, "restofit onFailure");
+        }
+
+        mCurrentLocation = location;
+        Log.i(MyLog.TAG, "mCurrentLocation "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
+
+        Log.i(MyLog.TAG, "distance "+ Math.round(mCurrentLocation.distanceTo(mLastLocation)));
+
+        if ((Math.round(mCurrentLocation.distanceTo(mLastLocation)) > minChangeDistanceForUpdate || !isMapLoaded
+                || placesList.isEmpty()) && !sendRequest) {
+
+            mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
+            mLastLocation = mCurrentLocation;
+//        updateLocationUI();
+            Toast.makeText(this, "location updated",
+                    Toast.LENGTH_SHORT).show();
+//        setLocationonMap(location);
+            if (mCurrLocationMarker != null) {
+                mCurrLocationMarker.remove();
             }
 
+            //Place current location marker
+            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+
+            //move map camera
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+            mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+
+//            build_retrofit_and_get_response();
+            retrofitRequest();
+        }
+
+        //stop location updates
+        if (mGoogleApiClient != null) {
+            if (!locationGet) {
+//                LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
+                locationGet = true;
+//                startSlowLocationUpdates();
+            }
+
+        }
+    }
+
+    private boolean sendRequest = false;
+    private void retrofitRequest() {
+        sendRequest = true;
+        //Create a retrofit call object
+        Call<NearbyPlaces> call = retrofit.create(IGooglePlacesWebservicesAPI.class).getNearbyPlaces(mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude(), defaultRadius);
+
+        //Enque the call
+        call.enqueue(new Callback<NearbyPlaces>() {
             @Override
             public void onResponse(Call<NearbyPlaces> call, Response<NearbyPlaces> response) {
                 Log.i(MyLog.TAG, "restofit onResponse");
@@ -524,9 +508,16 @@ public class MapsActivity extends AppCompatActivity implements
                     Log.d(MyLog.TAG, "There is an error");
                     e.printStackTrace();
                 }
+
+                sendRequest = false;
+            }
+
+            @Override
+            public void onFailure(Call<NearbyPlaces> call, Throwable t) {
+                Log.i(MyLog.TAG, "restofit onFailure "+ t.toString() +" "+t.getMessage());
+                sendRequest = false;
             }
         });
-
     }
 
     public void setPlacesOnMap() {
@@ -555,79 +546,9 @@ public class MapsActivity extends AppCompatActivity implements
                 markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
 
 
-                // move map camera
-//                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-//                        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
-
             }
             mAdapter.notifyDataSetChanged();
             isMapLoaded = true;
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        if (requestCode != PermissionUtils.LOCATION_PERMISSION_REQUEST_CODE) {
-            return;
-        }
-
-        if (PermissionUtils.isPermissionGranted(permissions, grantResults,
-                Manifest.permission.ACCESS_FINE_LOCATION)) {
-
-            initializeMapsSettings();
-        } else {
-            // Display the missing permission error dialog when the fragments resume.
-            mPermissionDenied = true;
-        }
-    }
-
-    /**
-     * Callback that fires when the location changes.
-     */
-    @Override
-    public void onLocationChanged(Location location) {
-        Log.i(MyLog.TAG, "onLocationChanged");
-
-        if (mLastLocation != null)
-        Log.i(MyLog.TAG, "mLastLocation "+ mLastLocation.getLatitude() + "," + mLastLocation.getLongitude());
-
-        if (mLastLocation == null) {
-            mLastLocation = location;
-
-        }
-
-        mCurrentLocation = location;
-        Log.i(MyLog.TAG, "mCurrentLocation "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
-
-        Log.i(MyLog.TAG, "distance "+ Math.round(mCurrentLocation.distanceTo(mLastLocation)));
-
-        if (Math.round(mCurrentLocation.distanceTo(mLastLocation)) > minChangeDistanceForUpdate || !isMapLoaded) {
-
-            mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
-//        updateLocationUI();
-            Toast.makeText(this, "location updated",
-                    Toast.LENGTH_SHORT).show();
-//        setLocationonMap(location);
-//========
-            if (mCurrLocationMarker != null) {
-                mCurrLocationMarker.remove();
-            }
-
-            //Place current location marker
-            LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
-
-            //move map camera
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-            mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
-
-            build_retrofit_and_get_response();
-
-        }
-
-        //stop location updates
-        if (mGoogleApiClient != null) {
-            LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
         }
     }
 
@@ -697,4 +618,5 @@ public class MapsActivity extends AppCompatActivity implements
             Log.i(MyLog.TAG, "id " + commonInfo.getPlaceId());
         }
     }
+
 }
