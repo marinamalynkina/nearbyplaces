@@ -204,6 +204,7 @@ public class MapsActivity extends AppCompatActivity implements
         buildGoogleApiClient();
         createLocationRequest();
         buildLocationSettingsRequest();
+        checkLocationSettings();
 
         isMapLoaded = false;
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
@@ -401,6 +402,7 @@ public class MapsActivity extends AppCompatActivity implements
         if (PermissionUtils.checkLocationPermission(this)) {
             Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
                     mGoogleApiClient);
+
 //            setLocationonMap(mLastLocation);
 
 //            setMyLocation(mLastLocation);
@@ -586,12 +588,19 @@ public class MapsActivity extends AppCompatActivity implements
     @Override
     public void onLocationChanged(Location location) {
         Log.i(MyLog.TAG, "onLocationChanged");
+
+        if (mLastLocation != null)
+        Log.i(MyLog.TAG, "mLastLocation "+ mLastLocation.getLatitude() + "," + mLastLocation.getLongitude());
+
         if (mLastLocation == null) {
             mLastLocation = location;
 
         }
 
         mCurrentLocation = location;
+        Log.i(MyLog.TAG, "mCurrentLocation "+ mCurrentLocation.getLatitude() + "," + mCurrentLocation.getLongitude());
+
+        Log.i(MyLog.TAG, "distance "+ Math.round(mCurrentLocation.distanceTo(mLastLocation)));
 
         if (Math.round(mCurrentLocation.distanceTo(mLastLocation)) > minChangeDistanceForUpdate || !isMapLoaded) {
 
