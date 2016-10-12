@@ -33,14 +33,18 @@
 
         <activity
             android:name=".MapsActivity"
-            android:label="@string/title_activity_maps">
+            android:label="@string/title_activity_maps"
+            android:configChanges="orientation|screenSize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".PlaceActivity"></activity>
+        <activity
+            android:name=".PlaceActivity"
+            android:configChanges="orientation|screenSize">
+        </activity>
     </application>
 
 </manifest>

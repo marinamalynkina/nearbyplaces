@@ -1,5 +1,8 @@
 package com.marinamalynkina.android.nearbyplaces.data.network.models.response;
 
+import android.os.Parcel;
+import android.os.Parcelable;
+
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 
@@ -10,8 +13,8 @@ import java.util.Map;
 /**
  * Created by ilmarin on 10.10.16.
  */
-@SuppressWarnings("serial")
-public class PlaceCommonInfo implements Serializable {
+
+public class PlaceCommonInfo implements Parcelable {
 
     private Geometry geometry;
 
@@ -117,4 +120,46 @@ public class PlaceCommonInfo implements Serializable {
     public void setVicinity(String vicinity) {
         this.vicinity = vicinity;
     }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeParcelable(this.geometry, flags);
+        dest.writeString(this.icon);
+        dest.writeString(this.name);
+        dest.writeParcelable(this.openingHours, flags);
+        dest.writeTypedList(this.photos);
+        dest.writeString(this.placeId);
+        dest.writeString(this.scope);
+        dest.writeString(this.reference);
+        dest.writeString(this.vicinity);
+    }
+
+    protected PlaceCommonInfo(Parcel in) {
+        this.geometry = in.readParcelable(Geometry.class.getClassLoader());
+        this.icon = in.readString();
+        this.name = in.readString();
+        this.openingHours = in.readParcelable(OpeningHours.class.getClassLoader());
+        this.photos = in.createTypedArrayList(PhotoInfo.CREATOR);
+        this.placeId = in.readString();
+        this.scope = in.readString();
+        this.reference = in.readString();
+        this.vicinity = in.readString();
+    }
+
+    public static final Parcelable.Creator<PlaceCommonInfo> CREATOR = new Parcelable.Creator<PlaceCommonInfo>() {
+        @Override
+        public PlaceCommonInfo createFromParcel(Parcel source) {
+            return new PlaceCommonInfo(source);
+        }
+
+        @Override
+        public PlaceCommonInfo[] newArray(int size) {
+            return new PlaceCommonInfo[size];
+        }
+    };
 }

@@ -104,10 +104,11 @@ public class MapsActivity extends AppCompatActivity implements
      * Represents a geographical location.
      */
     protected Location mCurrentLocation;
-    protected final static String KEY_LOCATION = "location";
+    protected final static String KEY_CURRENTLOCATION = "current_location";
 
     // location with last requested places
     private Location mLastLocation;
+    protected final static String KEY_LASTLOCATION = "last_location";
 
     private boolean isMapLoaded;
     private Marker mCurrLocationMarker;
@@ -133,7 +134,8 @@ public class MapsActivity extends AppCompatActivity implements
     private boolean mPermissionDenied = false;
 
 
-    private List<PlaceRow> placesList = new ArrayList<>();
+    private ArrayList<PlaceRow> placesList = new ArrayList<>();
+    protected final static String KEY_PLACES = "places";
     private RecyclerView recyclerView;
     private PlacesListAdapter mAdapter;
 
@@ -151,13 +153,12 @@ public class MapsActivity extends AppCompatActivity implements
 
         // настройка поведения нижнего экрана
         BottomSheetBehavior bottomSheetBehavior = BottomSheetBehavior.from(llBottomSheet);
+
         // настройка состояний нижнего экрана
         bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-//        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
-//        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
 
         // настройка максимальной высоты
-        bottomSheetBehavior.setPeekHeight(340);
+        bottomSheetBehavior.setPeekHeight(getResources().getDimensionPixelOffset(R.dimen.bottom_sheet_height));
 
         // настройка возможности скрыть элемент при свайпе вниз
         bottomSheetBehavior.setHideable(false);
@@ -204,6 +205,7 @@ public class MapsActivity extends AppCompatActivity implements
         createLocationRequest();
         buildLocationSettingsRequest();
 
+        isMapLoaded = false;
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
@@ -230,7 +232,9 @@ public class MapsActivity extends AppCompatActivity implements
      * @param savedInstanceState The activity state saved in the Bundle.
      */
     private void updateValuesFromBundle(Bundle savedInstanceState) {
+        Log.i(MyLog.TAG, "updateValuesFromBundle");
         if (savedInstanceState != null) {
+            Log.i(MyLog.TAG, "updateValuesFromBundle savedInstanceState not null");
             // Update the value of mRequestingLocationUpdates from the Bundle, and make sure that
             // the Start Updates and Stop Updates buttons are correctly enabled or disabled.
             if (savedInstanceState.keySet().contains(KEY_REQUESTING_LOCATION_UPDATES)) {
@@ -240,16 +244,29 @@ public class MapsActivity extends AppCompatActivity implements
 
             // Update the value of mCurrentLocation from the Bundle and update the UI to show the
             // correct latitude and longitude.
-            if (savedInstanceState.keySet().contains(KEY_LOCATION)) {
-                // Since KEY_LOCATION was found in the Bundle, we can be sure that mCurrentLocation
-                // is not null.
-                mCurrentLocation = savedInstanceState.getParcelable(KEY_LOCATION);
+            if (savedInstanceState.keySet().contains(KEY_CURRENTLOCATION)) {
+                mCurrentLocation = savedInstanceState.getParcelable(KEY_CURRENTLOCATION);
+                if (mCurrentLocation != null)
+                    Log.i(MyLog.TAG, "updateValuesFromBundle mCurrentLocation "+ mCurrentLocation.getLatitude()+","+mCurrentLocation.getLongitude());
+            }
+
+            if (savedInstanceState.keySet().contains(KEY_LASTLOCATION)) {
+                mLastLocation = savedInstanceState.getParcelable(KEY_LASTLOCATION);
+                if (mLastLocation != null)
+                Log.i(MyLog.TAG, "updateValuesFromBundle mLastLocation "+ mLastLocation.getLatitude()+","+mLastLocation.getLongitude());
             }
 
             // Update the value of mLastUpdateTime from the Bundle and update the UI.
             if (savedInstanceState.keySet().contains(KEY_LAST_UPDATED_TIME_STRING)) {
                 mLastUpdateTime = savedInstanceState.getString(KEY_LAST_UPDATED_TIME_STRING);
             }
+
+            if (savedInstanceState.keySet().contains(KEY_PLACES)) {
+                placesList = savedInstanceState.getParcelableArrayList(KEY_PLACES);
+                Log.i(MyLog.TAG, "updateValuesFromBundle placesList exist "+ placesList.size());
+
+            }
+//            savedInstanceState.putParcelableArrayList(KEY_PLACES, placesList);
         }
     }
 
@@ -355,6 +372,7 @@ public class MapsActivity extends AppCompatActivity implements
         if (PermissionUtils.isLocationPermissionEnable(this))
             initializeMapsSettings();
 
+
         // Add a marker in Sydney and move the camera
 //        LatLng sydney = new LatLng(-34, 151);
 //        mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
@@ -378,6 +396,8 @@ public class MapsActivity extends AppCompatActivity implements
     public void onConnected(@Nullable Bundle bundle) {
         Log.i(MyLog.TAG, "onConnected");
 
+        setPlacesOnMap();
+
         if (PermissionUtils.checkLocationPermission(this)) {
             Location mLastLocation = LocationServices.FusedLocationApi.getLastLocation(
                     mGoogleApiClient);
@@ -391,7 +411,6 @@ public class MapsActivity extends AppCompatActivity implements
 
 
         }
-
 
     }
 
@@ -466,8 +485,7 @@ public class MapsActivity extends AppCompatActivity implements
             public void onResponse(Call<NearbyPlaces> call, Response<NearbyPlaces> response) {
                 Log.i(MyLog.TAG, "restofit onResponse");
                 try {
-                    mMap.clear();
-                    placesList.clear();
+
                     Log.i(MyLog.TAG, "restofit onResponse response.message="+response.message());
                     Log.i(MyLog.TAG, "restofit onResponse response.code="+response.code());
                     Log.i(MyLog.TAG, "restofit onResponse response.isSuccessful="+response.isSuccessful());
@@ -475,20 +493,13 @@ public class MapsActivity extends AppCompatActivity implements
                     Log.i(MyLog.TAG, "restofit onResponse response.places size="+response.body().getPlaces().size());
 
 
+                    List<PlaceRow> list = new ArrayList<PlaceRow>();
                     // This loop will go through all the results and add marker on each location.
                     for (int i = 0; i < response.body().getPlaces().size(); i++) {
                         Double lat = response.body().getPlaces().get(i).getGeometry().getLocation().getLatitude();
                         Double lng = response.body().getPlaces().get(i).getGeometry().getLocation().getLongitude();
-                        String placeName = response.body().getPlaces().get(i).getName();
-                        String vicinity = response.body().getPlaces().get(i).getVicinity();
 
-                        Log.i(MyLog.TAG, "place  "+ i+" "+ lat + "," + lng+" " + placeName+" "+ vicinity);
-
-
-                        MarkerOptions markerOptions = new MarkerOptions();
                         LatLng latLng = new LatLng(lat, lng);
-
-//                        mCurrentLocation.
 
                         Location l = new Location(mCurrentLocation);
                         l.setLatitude(lat);
@@ -496,26 +507,17 @@ public class MapsActivity extends AppCompatActivity implements
 
                         int distance = Math.round(mCurrentLocation.distanceTo(l));
 
-
-                        // Position of Marker on Map
-                        markerOptions.position(latLng);
-                        // Adding Title to the Marker
-                        markerOptions.title(placeName + " "+distance+" м");
                         // Adding Marker to the Camera.
                         if (distance <= defaultRadius) {
-                            Marker m = mMap.addMarker(markerOptions);
-                            // Adding colour to the marker
-                            markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
-
-                            placesList.add(new PlaceRow(response.body().getPlaces().get(i), distance + " m"));
+                            list.add(new PlaceRow(response.body().getPlaces().get(i), distance + " m"));
                         }
 
-                        // move map camera
-//                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
-//                        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
                     }
 
-                    mAdapter.notifyDataSetChanged();
+                    placesList.clear();
+                    placesList.addAll(list);
+
+                    setPlacesOnMap();
                 } catch (Exception e) {
                     Log.d(MyLog.TAG, "There is an error");
                     e.printStackTrace();
@@ -525,6 +527,41 @@ public class MapsActivity extends AppCompatActivity implements
 
     }
 
+    public void setPlacesOnMap() {
+        if (placesList != null && placesList.size() > 0) {
+            mMap.clear();
+
+            for (int i = 0; i < placesList.size(); i++) {
+                Double lat = placesList.get(i).getCommonInfo().getGeometry().getLocation().getLatitude();
+                Double lng = placesList.get(i).getCommonInfo().getGeometry().getLocation().getLongitude();
+                String placeName = placesList.get(i).getCommonInfo().getName();
+                String vicinity = placesList.get(i).getCommonInfo().getVicinity();
+
+                Log.i(MyLog.TAG, "place  " + i + " " + lat + "," + lng + " " + placeName + " " + vicinity);
+
+
+                MarkerOptions markerOptions = new MarkerOptions();
+                LatLng latLng = new LatLng(lat, lng);
+
+                // Position of Marker on Map
+                markerOptions.position(latLng);
+                // Adding Title to the Marker
+                markerOptions.title(placeName + " " + placesList.get(i).getDistance() + " м");
+                // Adding Marker to the Camera.
+                Marker m = mMap.addMarker(markerOptions);
+                // Adding colour to the marker
+                markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED));
+
+
+                // move map camera
+//                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+//                        mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
+
+            }
+            mAdapter.notifyDataSetChanged();
+            isMapLoaded = true;
+        }
+    }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
@@ -570,16 +607,10 @@ public class MapsActivity extends AppCompatActivity implements
 
             //Place current location marker
             LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
-//        MarkerOptions markerOptions = new MarkerOptions();
-//        markerOptions.position(latLng);
-//        markerOptions.title("Current Position");
-//        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA));
-//        mCurrLocationMarker = mMap.addMarker(markerOptions);
 
             //move map camera
             mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
             mMap.animateCamera(CameraUpdateFactory.zoomTo(defaultZoomLevel));
-            isMapLoaded = true;
 
             build_retrofit_and_get_response();
 
@@ -631,8 +662,11 @@ public class MapsActivity extends AppCompatActivity implements
         Log.i(MyLog.TAG,  "onSaveInstanceState");
         if (savedInstanceState != null) {
 //            savedInstanceState.putBoolean(KEY_REQUESTING_LOCATION_UPDATES, mRequestingLocationUpdates);
-            savedInstanceState.putParcelable(KEY_LOCATION, mCurrentLocation);
+            savedInstanceState.putParcelable(KEY_CURRENTLOCATION, mCurrentLocation);
+            savedInstanceState.putParcelable(KEY_LASTLOCATION, mLastLocation);
             savedInstanceState.putString(KEY_LAST_UPDATED_TIME_STRING, mLastUpdateTime);
+            Log.i(MyLog.TAG,  "onSaveInstanceState placesList size" +placesList.size());
+            savedInstanceState.putParcelableArrayList(KEY_PLACES, placesList);
         }else
             Log.i(MyLog.TAG,  "onSaveInstanceState null");
         super.onSaveInstanceState(savedInstanceState);

@@ -38,7 +38,7 @@ public class PlaceActivity extends AppCompatActivity {
         placeInfo = (TextView) findViewById(R.id.place_info);
 
         Intent i = getIntent();
-        placeRow = (PlaceRow)i.getSerializableExtra("placeRow");
+        placeRow = (PlaceRow)i.getParcelableExtra("placeRow");
 
         if (placeRow != null) {
             Log.i(MyLog.TAG, "placeRow != null ");

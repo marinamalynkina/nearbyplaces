@@ -77,4 +77,6 @@ public class PlacesListAdapter extends RecyclerView.Adapter<PlacesListAdapter.My
     public interface PlaceListListener {
         void onListRowClick(PlaceRow placeRow);
     }
+
+
 }
